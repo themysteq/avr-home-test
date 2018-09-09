@@ -16,6 +16,10 @@
 #define BAUDRATE 9600
 #define MY_UBRR 51
 
+#define DHT_DDR DDRD
+#define DHT_PORT PORTD
+#define DHT_PIN PD2
+
 uint8_t soil_humidity_raw = 0x00;
 uint8_t soil_humidity = 0x00;
 unsigned char last_state = 0;
@@ -48,17 +52,32 @@ void stop_TIMER2()
     TCCR2 &= ~((1<<CS22)|(1<<CS21)|(1<<CS20));
 }
  */
+
 void init_INT0(){
-
-}
-void init_DHT_port(){
-    DDRD |= (1<<PD2);
+    MCUCR |= (1<<ISC01); //INT0 failing edge
+    GICR |=(1<<INT0);
 }
 
-void init_ADC(){
-    ADMUX = (1<<REFS0)|(1<<MUX1)|(1<<MUX0)|(1<<ADLAR); //AVCC as Aref, ADC3 input, ADLAR = left align
-    ADCSRA = (1<<ADIE)|(1<<ADSC)|(1<<ADEN);
+void disable_INT0(){
+    GICR &= ~(1<<INT0);
 }
+void start_TIMER0(){
+    TCCR0 |= (1<<CS01); // clk/8
+}
+void stop_TIMER0(){
+    TCCR0 |= 0x00;
+
+}
+
+void SEND_START(){
+    DHT_DDR |= (1<<DHT_PIN);
+    DHT_PORT &= ~(1<<DHT_PIN);
+    _delay_ms(18);
+    DHT_PORT |= (1<<DHT_PIN);
+    DHT_DDR &= ~(1<<DHT_PIN);
+}
+
+
 
 void USART_send_char(char _x){
     while(!(UCSRA & (1<<UDRE)));
@@ -77,26 +96,22 @@ void USART_send_string(){
 }
 
 
-
 int main(void)
 {
     DDRC|=1<<PORTC5;
     PORTC=0x00;
-    /* Replace with your application code */
+
     init_USART(MY_UBRR);
     init_ADC();
     sei();
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wmissing-noreturn"
+    #pragma clang diagnostic push
+    #pragma clang diagnostic ignored "-Wmissing-noreturn"
     while (1)
     {
         PORTC^=1<<PORTC5;
-
         ADCSRA |= (1<<ADSC);
         _delay_ms(3000);
-        //soil_humidity_raw = ~ soil_humidity_raw;
-        changed_data = 100-(soil_humidity_raw*100)/255;
-
+/*
         DDRC|=(1<<PORTC4);
         PORTC |= (1<<PORTC4);
         _delay_ms(50);
@@ -106,20 +121,10 @@ int main(void)
         _delay_us(35);
         PORTC &=~(1<<PORTC4);
         DDRC &= ~(1<<PORTC4);
-
-      //  dht_fetch(&temperature,&humidity);
-        //changed_data = changed_data<<2;
-        //changed_data /= 10;
-        //changed_data = changed_data-1;
-        //if(changed_data %100){
-        //	changed_data = 100;
-        //}
-
-        //changed_data &= 0x00FF;
-        snprintf(out_buff,127,"soil humidity: %u%%, raw = %u \r\n",changed_data,soil_humidity_raw);
+*/
+        snprintf(out_buff,127,"Hello world!\r\n");
         USART_send_string();
-       // snprintf(out_buff,127,"temp: %d, hum: %d%%\r\n",temperature,humidity);
-        //USART_send_string();
+
     }
 #pragma clang diagnostic pop
 }
