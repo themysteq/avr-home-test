@@ -2,6 +2,9 @@ CMAKE_MINIMUM_REQUIRED(VERSION 2.8.4)
 SET(CMAKE_SYSTEM_NAME Generic)
 include_directories("/usr/lib/gcc/avr/7.2.0/include")
 
+
+SET(CMAKE_C_COMPILER avr-gcc)
+SET(CMAKE_CXX_COMPILER avr-c++)
 #============================================================================================
 PROJECT(avr-dht)
 
@@ -10,8 +13,7 @@ SET(FREQ "8000000")
 
 #============================================================================================
 
-SET(CMAKE_C_COMPILER avr-gcc)
-SET(CMAKE_CXX_COMPILER avr-c++)
+
 
 SET(CMAKE_C_FLAGS  "-Os -mmcu=${DEVICE} -DF_CPU=${FREQ}UL -std=gnu99 -Wl,--gc-sections")
 SET(CMAKE_CXX_FLAGS "-Os -mmcu=${DEVICE} -DF_CPU=${FREQ}UL -Wl,--gc-sections")
