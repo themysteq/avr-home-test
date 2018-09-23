@@ -3,7 +3,7 @@ SET(CMAKE_SYSTEM_NAME Generic)
 include_directories("/usr/lib/gcc/avr/7.2.0/include")
 
 #============================================================================================
-PROJECT(avr-clion)
+PROJECT(avr-dht)
 
 SET(DEVICE "atmega8")
 SET(FREQ "8000000")
@@ -11,7 +11,7 @@ SET(FREQ "8000000")
 #============================================================================================
 
 SET(CMAKE_C_COMPILER avr-gcc)
-SET(CMAKE_CXX_COMPILER avr-g++)
+SET(CMAKE_CXX_COMPILER avr-c++)
 
 SET(CMAKE_C_FLAGS  "-Os -mmcu=${DEVICE} -DF_CPU=${FREQ}UL -std=gnu99 -Wl,--gc-sections")
 SET(CMAKE_CXX_FLAGS "-Os -mmcu=${DEVICE} -DF_CPU=${FREQ}UL -Wl,--gc-sections")

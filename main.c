@@ -8,10 +8,11 @@
 #define F_CPU 8000000
 
 #include <avr/io.h>
-#include <util/delay.h>
 #include <avr/interrupt.h>
 #include <stdio.h>
+#include <string.h>
 //#include "dht.h"
+
 
 #define BAUDRATE 9600
 #define MY_UBRR 51
@@ -20,18 +21,28 @@
 #define DHT_PORT PORTD
 #define DHT_PIN PD2
 
-uint8_t soil_humidity_raw = 0x00;
-uint8_t soil_humidity = 0x00;
-unsigned char last_state = 0;
-unsigned char count_zeros = 0;
-unsigned char count_ones = 0;
+#define DHT_START_TIME_L 130
+#define DHT_START_TIME_H 140
+
+#define DHT_BIT_ZERO_TIME_L 71
+#define DHT_BIT_ZERO_TIME_H 81
+#define DHT_BIT_ONE_TIME_L 118
+#define DHT_BIT_ONE_TIME_H 128
+
+#define FLAG_ERROR 0x02
+#define FLAG_STARTED 0x01
+#define FLAG_FINISHED 0x04
+#define FLAG_SUMOK 0x08
+
 unsigned char dht_data[5];
 unsigned char buff = 0x00;
 unsigned char out_buff[128];
-uint16_t changed_data = 0x0000;
-int8_t  humidity = -2;
-int8_t temperature = -2;
-
+unsigned char transmission_flags = 0x00;
+unsigned char bit_time = 0x00;
+unsigned char bits = 0x00;
+unsigned char sum = 0x00;
+unsigned char time = 0x00;
+uint64_t dht11_data = 0;
 void init_USART(unsigned char ubrr){
     /* baud rate registers */
     UBRRL = (unsigned char)ubrr;
@@ -41,17 +52,6 @@ void init_USART(unsigned char ubrr){
     UCSRB = (1<<RXCIE)|(1<<RXEN)|(1<<TXEN);
 
 }
-/*
-void init_TIMER2(){
-
-    TCCR2 |= (1<<CS21); //clkT2S /8 (From prescaler)
-    OCR2 = 10;
-}
-void stop_TIMER2()
-{
-    TCCR2 &= ~((1<<CS22)|(1<<CS21)|(1<<CS20));
-}
- */
 
 void init_INT0(){
     MCUCR |= (1<<ISC01); //INT0 failing edge
@@ -60,71 +60,120 @@ void init_INT0(){
 
 void disable_INT0(){
     GICR &= ~(1<<INT0);
+    TCNT0 = 0x00;
 }
 void start_TIMER0(){
+    GICR |= (1<<INT0);
     TCCR0 |= (1<<CS01); // clk/8
+}
+
+void start_TIMER1(){
+    TCCR1B |= (1<<CS12)|(1<<CS10);
+    TCNT1 = 0;
+}
+void stop_TIMER1(){
+    TCCR1B = 0x00;
+}
+
+void wait_TIMER1_20ms(){
+    start_TIMER1();
+    while(TCNT1L <= 156){}; //256*78 = 19968us
+    stop_TIMER1();
 }
 void stop_TIMER0(){
     TCCR0 |= 0x00;
-
+}
+void parse_data(){
+    dht_data[0] = ((unsigned char)(dht11_data));
+    dht11_data >>= 8;
+    dht_data[1] = ((unsigned char)(dht11_data));
+    dht11_data >>= 8;
+    dht_data[2] = ((unsigned char)(dht11_data)); //temp
+    dht11_data >>= 8;
+    dht_data[3] = ((unsigned char)(dht11_data));
+    dht11_data >>= 8;
+    dht_data[4] = ((unsigned char)(dht11_data)); //humidity
+    dht11_data = 0;
+}
+void abort_DHT(){
+    stop_TIMER0();
+    disable_INT0();
+    snprintf(out_buff,sizeof(out_buff),"time: %u\r\n",time);
 }
 
-void SEND_START(){
+void finish_DHT(){
+    stop_TIMER0();
+    disable_INT0();
+    transmission_flags |= FLAG_FINISHED;
+    parse_data();
+    sum = dht_data[0];
+    sum += dht_data[1];
+    sum += dht_data[2];
+    sum += dht_data[3];
+    if(sum == dht_data[4]){
+        transmission_flags |= FLAG_SUMOK;
+    }
+    else {
+        transmission_flags |= FLAG_ERROR;
+    }
+}
+
+void start_DHT(){
+    abort_DHT();
+    dht_data[0] = 0x00;
+    dht_data[1] = 0x00;
+    dht_data[2] = 0x00;
+    dht_data[3] = 0x00;
+    dht_data[4] = 0x00;
+    bits = 0x00;
+    transmission_flags = 0x00;
     DHT_DDR |= (1<<DHT_PIN);
     DHT_PORT &= ~(1<<DHT_PIN);
-    _delay_ms(18);
-    DHT_PORT |= (1<<DHT_PIN);
+    wait_TIMER1_20ms();
     DHT_DDR &= ~(1<<DHT_PIN);
+    start_TIMER0();
+    init_INT0();
 }
-
-
 
 void USART_send_char(char _x){
     while(!(UCSRA & (1<<UDRE)));
     UDR = _x;
-
 }
 
 void USART_send_string(){
-
-    cli();
-    for(unsigned char x = 0;x<128;++x){
+    unsigned int l = (strlen(out_buff)+1 < sizeof(out_buff))?strlen(out_buff)+1: sizeof(out_buff);
+    for(unsigned char x = 0;x <=l;++x){
         USART_send_char(out_buff[x]);
     }
-    strncpy(out_buff,0x00,127);
-    sei();
 }
 
+void add_bit(unsigned char bit){
+    dht11_data <<= 1;
+    dht11_data |= bit;
+    bits +=1;
+}
 
 int main(void)
 {
-    DDRC|=1<<PORTC5;
-    PORTC=0x00;
-
     init_USART(MY_UBRR);
-    init_ADC();
     sei();
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wmissing-noreturn"
+    for(uint8_t i = 0;i<200;i++){
+        wait_TIMER1_20ms();
+    }
     while (1)
     {
-        PORTC^=1<<PORTC5;
-        ADCSRA |= (1<<ADSC);
-        _delay_ms(3000);
-/*
-        DDRC|=(1<<PORTC4);
-        PORTC |= (1<<PORTC4);
-        _delay_ms(50);
-        PORTC &= ~(1<<PORTC4);
-        _delay_ms(25);
-        PORTC|=(1<<PORTC4);
-        _delay_us(35);
-        PORTC &=~(1<<PORTC4);
-        DDRC &= ~(1<<PORTC4);
-*/
-        snprintf(out_buff,127,"Hello world!\r\n");
-        USART_send_string();
-
+        start_DHT();
+        for(uint8_t i= 0;i<200;i++){
+            wait_TIMER1_20ms();
+        }
+        if(transmission_flags & (FLAG_FINISHED|FLAG_SUMOK)){
+            snprintf(out_buff, sizeof(out_buff),"TEMP %hhu HUM %hhu\r\n",dht_data[2],dht_data[4]);
+          cli();
+          USART_send_string();
+          sei();
+        }
     }
 #pragma clang diagnostic pop
 }
@@ -132,16 +181,37 @@ int main(void)
 
 
 ISR(USART_RXC_vect){
-    //PORTC^=1<<PORTC5;
-
     buff = UDR;
     UDR = buff;
 }
 
-ISR(ADC_vect){
-    //cli();
-    PORTC^=1<<PORTC5;
-    soil_humidity_raw = ADCH;
-    //USART_send_string();
-    //sei();
+ISR(TIMER0_OVF_vect){
+    transmission_flags |= FLAG_ERROR;
+    abort_DHT();
+}
+
+ISR(INT0_vect){
+    bit_time = TCNT0;
+    TCNT0 = 0;
+    if(transmission_flags & FLAG_ERROR){
+        abort_DHT();
+    }
+    if(bit_time >= DHT_BIT_ZERO_TIME_L && bit_time <= DHT_BIT_ZERO_TIME_H){
+        add_bit(0x00);
+    }
+    else if(bit_time >= DHT_BIT_ONE_TIME_L && bit_time <= DHT_BIT_ONE_TIME_H)
+    {
+        add_bit(0x01);
+    }
+    else if(bit_time >= DHT_START_TIME_L && bit_time<=DHT_START_TIME_H){
+        transmission_flags = FLAG_STARTED;
+    }
+    else if(bit_time > (DHT_START_TIME_L+DHT_BIT_ZERO_TIME_L)){
+        transmission_flags |= FLAG_ERROR;
+        abort_DHT();
+    }
+    if(bits==40){
+        finish_DHT();
+    }
+
 }
