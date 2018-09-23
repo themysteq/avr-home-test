@@ -42,6 +42,8 @@ unsigned char bit_time = 0x00;
 unsigned char bits = 0x00;
 unsigned char sum = 0x00;
 unsigned char time = 0x00;
+unsigned char spi_byte_recv = 0x00;
+unsigned char spi_byte_send = 0x00;
 uint64_t dht11_data = 0;
 void init_USART(unsigned char ubrr){
     /* baud rate registers */
@@ -153,6 +155,21 @@ void add_bit(unsigned char bit){
     bits +=1;
 }
 
+
+void SPI_SlaveInit(void) {
+/* Set MISO output, all others input */
+    DDR_SPI = (1<<DD_MISO);
+/* Enable SPI */
+    SPCR = (1<<SPE);
+    SPCR |= (1<<SPIE); //SPI slave interrupt enable
+}
+char SPI_SlaveReceive(void) {
+/* Wait for reception complete */
+    while (!(SPSR & (1 << SPIF)));
+/* Return data register */
+    return SPDR;
+}
+
 int main(void)
 {
     init_USART(MY_UBRR);
@@ -177,8 +194,6 @@ int main(void)
     }
 #pragma clang diagnostic pop
 }
-
-
 
 ISR(USART_RXC_vect){
     buff = UDR;
@@ -214,4 +229,10 @@ ISR(INT0_vect){
         finish_DHT();
     }
 
+}
+
+ISR(SPI_STC_vect){
+    spi_byte_recv = SPDR;
+    if(spi_byte_recv == 'H') { SPDR = dht_data[4]; }
+    if(spi_byte_recv == 'T') { SPDR = dht_data[2]; }
 }
