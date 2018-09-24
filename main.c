@@ -20,6 +20,8 @@
 #define DHT_DDR DDRD
 #define DHT_PORT PORTD
 #define DHT_PIN PD2
+#define DDR_SPI     DDRB
+#define DD_MISO     DDB4
 
 #define DHT_START_TIME_L 130
 #define DHT_START_TIME_H 140
@@ -33,7 +35,8 @@
 #define FLAG_STARTED 0x01
 #define FLAG_FINISHED 0x04
 #define FLAG_SUMOK 0x08
-
+#define SPI_TRANS_ACTIVE 0x01
+#define SPI_TRANS_INACTIVE 0x00
 unsigned char dht_data[5];
 unsigned char buff = 0x00;
 unsigned char out_buff[128];
@@ -43,7 +46,9 @@ unsigned char bits = 0x00;
 unsigned char sum = 0x00;
 unsigned char time = 0x00;
 unsigned char spi_byte_recv = 0x00;
-unsigned char spi_byte_send = 0x00;
+unsigned char spi_send_buff[129];
+unsigned char spi_buff_pos = 0;
+unsigned char spi_trans_status = 0x00;
 uint64_t dht11_data = 0;
 void init_USART(unsigned char ubrr){
     /* baud rate registers */
@@ -162,6 +167,20 @@ void SPI_SlaveInit(void) {
 /* Enable SPI */
     SPCR = (1<<SPE);
     SPCR |= (1<<SPIE); //SPI slave interrupt enable
+    memset(spi_send_buff,0, sizeof(spi_send_buff));
+}
+unsigned char spi_next_byte(){
+    unsigned char ret = 0x00;
+    if((spi_buff_pos <sizeof(spi_send_buff)) && (spi_trans_status & SPI_TRANS_ACTIVE)){
+        ret = spi_send_buff[spi_buff_pos];
+        spi_buff_pos+=1;
+        return ret;
+    }
+    else {
+        spi_trans_status = SPI_TRANS_INACTIVE;
+        spi_buff_pos = 0;
+        return 0xFF;
+    }
 }
 char SPI_SlaveReceive(void) {
 /* Wait for reception complete */
@@ -176,6 +195,7 @@ int main(void)
     sei();
     #pragma clang diagnostic push
     #pragma clang diagnostic ignored "-Wmissing-noreturn"
+    SPI_SlaveInit();
     for(uint8_t i = 0;i<200;i++){
         wait_TIMER1_20ms();
     }
@@ -187,6 +207,7 @@ int main(void)
         }
         if(transmission_flags & (FLAG_FINISHED|FLAG_SUMOK)){
             snprintf(out_buff, sizeof(out_buff),"TEMP %hhu HUM %hhu\r\n",dht_data[2],dht_data[4]);
+            snprintf(spi_send_buff,sizeof(spi_send_buff),"TEMP %hhu HUM %hhu\r\n\0",dht_data[2],dht_data[4]);
           cli();
           USART_send_string();
           sei();
@@ -233,6 +254,19 @@ ISR(INT0_vect){
 
 ISR(SPI_STC_vect){
     spi_byte_recv = SPDR;
-    if(spi_byte_recv == 'H') { SPDR = dht_data[4]; }
-    if(spi_byte_recv == 'T') { SPDR = dht_data[2]; }
+    if(spi_byte_recv == 'S') {
+        spi_trans_status = SPI_TRANS_ACTIVE;
+        spi_buff_pos = 0;
+        SPDR = 0xFF;
+        return;
+    }
+    else if(spi_trans_status){
+        SPDR = spi_next_byte();
+        return;
+    }
+    else {
+        SPDR = 254;
+        return;
+
+    }
 }
