@@ -91,7 +91,7 @@ void wait_TIMER1_20ms(){
     stop_TIMER1();
 }
 void stop_TIMER0(){
-    TCCR0 |= 0x00;
+    TCCR0 = 0x00;
 }
 void parse_data(){
     ATOMIC_BLOCK(ATOMIC_RESTORESTATE){
@@ -198,10 +198,9 @@ int main(void)
                 spi_copy_buff[i] = out_buff[i];
             }
             if(transmission_flags & (FLAG_FINISHED|FLAG_SUMOK)){
-                snprintf(out_buff, sizeof(out_buff),"TEMP %hhu HUM %hhu\n",dht_data[2],dht_data[4]);
+                snprintf(out_buff, sizeof(out_buff),"## TEMP %hhu HUM %hhu ##\n",dht_data[2],dht_data[4]);
             }else if(transmission_flags & (FLAG_FINISHED|FLAG_ERROR)){
-                snprintf(out_buff, sizeof(out_buff),"ERROR\n");
-
+                snprintf(out_buff, sizeof(out_buff),"## ERROR ##\n");
             }
         }
         USART_send_string();
