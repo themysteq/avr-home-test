@@ -248,14 +248,14 @@ ISR(INT0_vect){
 
 ISR(SPI_STC_vect){
     spi_byte_recv = SPDR;
-        if(SPDR == 'S'){
+        if(spi_byte_recv == 'S'){
             spi_buff_pos = 0x00;
         }
         if(spi_buff_pos >= sizeof(spi_copy_buff)){
             SPDR = 0x00;
         }
         else {
-            SPDR = spi_copy_buff[spi_buff_pos%sizeof(spi_copy_buff)];
-            spi_buff_pos = (spi_buff_pos +1)%sizeof(spi_copy_buff);
+            SPDR = spi_copy_buff[spi_buff_pos];
+            spi_buff_pos = (spi_buff_pos +1);
         }
 }
